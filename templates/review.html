@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Review Duplicates</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+        tr.kept {
+            background-color: #c8e6c9;
+        }
+        tr.duplicate {
+            background-color: #ffcdd2;
+        }
+        .actions {
+            margin-top: 20px;
+        }
+        .actions button {
+            margin-right: 10px;
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+        .save-box {
+            margin-top: 30px;
+            padding: 15px;
+            border: 1px solid #aaa;
+            background: #f9f9f9;
+        }
+        .select-helper {
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+        .select-helper button {
+            margin-right: 10px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .checkbox-cell {
+            width: 50px;
+            text-align: center;
+        }
+        .checkbox-cell input[type="checkbox"] {
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<h1>
+    Review Duplicate Group {{ current_group_index + 1 }} of {{ total_groups }}
+</h1>
+
+<div id="saveStatus" style="margin: 10px 0; font-weight: bold;"></div>
+
+{% if skipped_groups %}
+<div style="background-color: #fff3cd; border: 1px solid #ffc107; padding: 12px; margin-bottom: 20px;">
+    <strong>The selection created groups that were too large to check for duplicates and were skipped. Try different matching column selections.</strong>
+    <ul style="margin-top: 8px;">
+        {% for g in skipped_groups %}
+            <li>{{ g.row_count }} rows shared the value {{ g.matching_value }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{% if not group_rows.empty %}
+<form method="post">
+    <input type="hidden" name="group_id" value="{{ current_group_id }}">
+
+    <table>
+        <thead>
+            <tr>
+                <th class="checkbox-cell">Select</th>
+                {% for col in group_rows.columns %}
+                    <th>{{ col }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for idx, row in group_rows.iterrows() %}
+                <tr class="{{ 'kept' if loop.index0 == 0 else 'duplicate' }}">
+                    <td class="checkbox-cell">
+                        <input type="checkbox" name="selected_rows" value="{{ idx }}" class="row-checkbox">
+                    </td>
+                    {% for col in group_rows.columns %}
+                        <td>{{ row[col] }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="select-helper">
+        <button type="button" onclick="selectAllDuplicates()">Select All Duplicates</button>
+        <button type="button" onclick="selectNone()">Clear Selection</button>
+    </div>
+
+    <div class="actions">
+        <button type="submit" name="action" value="delete_all">
+            Delete All Duplicates
+        </button>
+        <button type="submit" name="action" value="delete_selected" onclick="return confirmDeleteSelected()">
+            Delete Selected
+        </button>
+        <button type="submit" name="action" value="keep_all">
+            Keep All
+        </button>
+    </div>
+</form>
+{% endif %}
+
+<!-- SAVE AT ANY TIME -->
+<div class="save-box">
+    <h3>Save current data frame</h3>
+    <form method="post" class="save-form">
+        <input type="text" name="filename" placeholder="optional filename.csv">
+        <button type="submit" name="action" value="save_df">
+            Save current data frame
+        </button>
+    </form>
+</div>
+
+<!-- FINAL GROUP PROMPT -->
+{% if is_last_group %}
+<div class="save-box">
+    <h2>You've reached the final duplicate group</h2>
+    <p>Do you want to save this data frame?</p>
+
+    <form method="post" class="save-form">
+        <input type="text" name="filename" placeholder="optional filename.csv">
+        <button type="submit" name="action" value="save_df">
+            Save final data frame
+        </button>
+    </form>
+</div>
+{% endif %}
+
+<script>
+    function selectAllDuplicates() {
+        const checkboxes = document.querySelectorAll('.row-checkbox');
+
+        checkboxes.forEach((checkbox, index) => {
+            // Skip first row (index 0) as it's the kept row
+            if (index > 0) {
+                checkbox.checked = true;
+            }
+        });
+    }
+
+    function selectNone() {
+        const checkboxes = document.querySelectorAll('.row-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+    }
+
+    function confirmDeleteSelected() {
+        const selected = document.querySelectorAll('.row-checkbox:checked');
+        if (selected.length === 0) {
+            alert('Please select at least one row to delete.');
+            return false;
+        }
+        return confirm(`Are you sure you want to delete ${selected.length} selected row(s)?`);
+    }
+
+    function showSaveMessage(text, isError = false) {
+        const el = document.getElementById('saveStatus');
+        el.textContent = text;
+        el.style.color = isError ? '#a00' : '#2e7d32';
+    }
+
+    function suggestedFilenameFrom(form) {
+        const field = form.querySelector('input[name="filename"]');
+        let name = (field && field.value.trim()) || 'deduplicated.csv';
+        if (!name.toLowerCase().endsWith('.csv')) {
+            name += '.csv';
+        }
+        return name;
+    }
+
+    async function handleSaveSubmit(event) {
+        event.preventDefault();
+        const form = event.target;
+        const suggestedName = suggestedFilenameFrom(form);
+        const formData = new FormData(form);
+        formData.set('action', 'save_df');
+
+        try {
+            if (window.showSaveFilePicker) {
+                let handle;
+                try {
+                    handle = await window.showSaveFilePicker({
+                        suggestedName: suggestedName,
+                        types: [{ description: 'CSV file', accept: { 'text/csv': ['.csv'] } }]
+                    });
+                } catch (pickerErr) {
+                    if (pickerErr.name === 'AbortError') {
+                        return; 
+                    }
+                    throw pickerErr;
+                }
+
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) {
+                    throw new Error('Server error while preparing the file (' + response.status + ')');
+                }
+                const blob = await response.blob();
+
+                const writable = await handle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+
+                showSaveMessage(`Saved as ${handle.name}`);
+            } else {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) {
+                    throw new Error('Server error while preparing the file (' + response.status + ')');
+                }
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = suggestedName;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+
+                showSaveMessage(`Download started: ${suggestedName}`);
+            }
+        } catch (err) {
+            showSaveMessage('Failed to save file: ' + err.message, true);
+        }
+    }
+
+    document.querySelectorAll('.save-form').forEach(form => {
+        form.addEventListener('submit', handleSaveSubmit);
+    });
+</script>
+
+</body>
+</html>

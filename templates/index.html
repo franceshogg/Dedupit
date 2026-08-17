@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deduplicator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+        }
+        h1 {
+            margin-bottom: 5px;
+        }
+        h2 {
+            margin-top: 35px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+        .description {
+            color: #555;
+            margin-bottom: 10px;
+        }
+        .checkbox-list {
+            border: 1px solid #ddd;
+            padding: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+        .checkbox-list-item {
+            padding: 2px 0;
+        }
+        .checkbox-list-item label {
+            margin-left: 5px;
+        }
+        .dynamic-row {
+            margin-bottom: 8px;
+        }
+        .dynamic-row > div {
+            display: inline-block;
+            margin-right: 15px;
+            vertical-align: top;
+        }
+        .dynamic-row label {
+            display: block;
+            font-size: 0.85em;
+            color: #555;
+        }
+        .pair-container {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .pair-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        button {
+            padding: 8px 16px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        input[type="file"],
+        input[type="text"],
+        input[type="number"],
+        select {
+            padding: 6px;
+            border: 1px solid #ddd;
+        }
+        .hidden {
+            display: none;
+        }
+        .loading-state {
+            text-align: center;
+            padding: 20px;
+            color: #555;
+        }
+        #fileStatus {
+            color: #555;
+            margin-top: 5px;
+        }
+        .submit-row {
+            margin-top: 30px;
+        }
+        .submit-row button {
+            padding: 10px 24px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Data Deduplicator</h1>
+<p class="description">Upload your data and configure deduplication settings.</p>
+
+{% if request.args.get('session_expired') %}
+<p style="color: #a00; border: 1px solid #a00; padding: 10px; max-width: 500px;">
+    Your previous session data is no longer available (the server may have
+    restarted). Please upload your file again.
+</p>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" id="mainForm">
+
+    <h2>Upload Your Data</h2>
+    <p class="description">Upload a CSV or TSV file to get started.</p>
+    <input type="file" name="file" id="file" required accept=".csv,.tsv">
+    <p id="fileStatus">No file selected</p>
+
+    <div id="configSections" class="hidden">
+
+        <h2>Exact Duplicate Detection</h2>
+        <p class="description">Columns that define exact duplicates (rows with matching values will be considered duplicates).</p>
+        <div id="subset_list" class="checkbox-list"></div>
+
+        <h2>Fuzzy Matching (Optional Matching)</h2>
+        <p class="description">Define pairs of NaN columns (wildcards) and matching columns for less strict duplicate detection.</p>
+        <div id="pairsContainer"></div>
+        <button type="button" onclick="addPair()">+ Add Matching Pair</button>
+        <input type="hidden" name="pair_count" id="pair_count" value="0">
+
+        <h2>Data Completeness</h2>
+        <p class="description">Prioritize rows with more complete data.</p>
+        <label>
+            <input type="checkbox" name="most_complete" id="most_complete" onchange="toggleNanSubset()">
+            Keep the row with the most complete data first
+        </label>
+        <div id="nan_subset_group" style="margin-top: 10px; display: none;">
+            <p class="description">Columns to count for completeness:</p>
+            <div id="nan_subset_list" class="checkbox-list"></div>
+        </div>
+
+        <h2>Sort Order</h2>
+        <p class="description">Define how to order your data (determines which duplicate is kept).</p>
+        <div id="sortRowsContainer"></div>
+        <button type="button" onclick="addSortRow()">+ Add Sort Column</button>
+        <input type="hidden" name="sort_col_count" id="sort_col_count" value="0">
+
+        <div class="submit-row">
+            <button type="submit">Process &amp; Review Duplicates</button>
+        </div>
+    </div>
+
+    <div id="loadingState" class="loading-state hidden">
+        <p>Loading your data and extracting columns...</p>
+    </div>
+</form>
+
+<script>
+    let availableColumns = [];
+    let sortRowCount = 0;
+    let pairCount = 0;
+
+    // File upload handling
+    document.getElementById('file').addEventListener('change', async function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const fileStatus = document.getElementById('fileStatus');
+        const configSections = document.getElementById('configSections');
+        const loadingState = document.getElementById('loadingState');
+
+        fileStatus.textContent = `Selected: ${file.name}`;
+
+        // Show loading state
+        configSections.classList.add('hidden');
+        loadingState.classList.remove('hidden');
+
+        // Upload file to get columns
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch('/get_columns', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.error) {
+                alert('Error reading file: ' + data.error);
+                loadingState.classList.add('hidden');
+                return;
+            }
+
+            availableColumns = data.columns;
+            populateColumnSelects();
+
+            // Show configuration sections
+            loadingState.classList.add('hidden');
+            configSections.classList.remove('hidden');
+
+        } catch (error) {
+            alert('Error uploading file: ' + error.message);
+            loadingState.classList.add('hidden');
+        }
+    });
+
+    function populateColumnSelects() {
+        populateCheckboxList('subset_list', 'subset');
+        populateCheckboxList('nan_subset_list', 'nan_subset');
+    }
+
+    function populateCheckboxList(containerId, inputName) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = '';
+
+        availableColumns.forEach(col => {
+            const item = document.createElement('div');
+            item.className = 'checkbox-list-item';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.name = inputName;
+            checkbox.value = col;
+            checkbox.id = `${inputName}_${col}`;
+
+            const label = document.createElement('label');
+            label.htmlFor = `${inputName}_${col}`;
+            label.textContent = col;
+
+            item.appendChild(checkbox);
+            item.appendChild(label);
+            container.appendChild(item);
+        });
+    }
+
+    function createColumnSelect(name, includeNone = false) {
+        const select = document.createElement('select');
+        select.name = name;
+
+        if (includeNone) {
+            const noneOption = document.createElement('option');
+            noneOption.value = '';
+            noneOption.textContent = '-- Select --';
+            select.appendChild(noneOption);
+        }
+
+        availableColumns.forEach(col => {
+            const option = document.createElement('option');
+            option.value = col;
+            option.textContent = col;
+            select.appendChild(option);
+        });
+
+        return select;
+    }
+
+    function createMultiColumnSelect(name, pairIndex) {
+        const container = document.createElement('div');
+        container.className = 'checkbox-list';
+
+        availableColumns.forEach(col => {
+            const item = document.createElement('div');
+            item.className = 'checkbox-list-item';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.name = name;
+            checkbox.value = col;
+            checkbox.id = `${name}_${pairIndex}_${col}`;
+
+            const label = document.createElement('label');
+            label.htmlFor = `${name}_${pairIndex}_${col}`;
+            label.textContent = col;
+
+            item.appendChild(checkbox);
+            item.appendChild(label);
+            container.appendChild(item);
+        });
+
+        return container;
+    }
+
+    function addSortRow() {
+        const container = document.getElementById('sortRowsContainer');
+        const row = document.createElement('div');
+        row.className = 'dynamic-row';
+        row.id = `sort_row_${sortRowCount}`;
+
+        const colDiv = document.createElement('div');
+        const colLabel = document.createElement('label');
+        colLabel.textContent = 'Column:';
+        const colSelect = createColumnSelect(`sort_col_${sortRowCount}`, true);
+        colDiv.appendChild(colLabel);
+        colDiv.appendChild(colSelect);
+
+        const orderDiv = document.createElement('div');
+        const orderLabel = document.createElement('label');
+        orderLabel.textContent = 'Order:';
+        const orderSelect = document.createElement('select');
+        orderSelect.name = `sort_order_${sortRowCount}`;
+        orderSelect.innerHTML = `
+            <option value="asc">Ascending</option>
+            <option value="desc">Descending</option>
+        `;
+        orderDiv.appendChild(orderLabel);
+        orderDiv.appendChild(orderSelect);
+
+        const btnDiv = document.createElement('div');
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.textContent = 'Remove';
+        removeBtn.onclick = () => removeSortRow(sortRowCount);
+        btnDiv.appendChild(removeBtn);
+
+        row.appendChild(colDiv);
+        row.appendChild(orderDiv);
+        row.appendChild(btnDiv);
+        container.appendChild(row);
+
+        sortRowCount++;
+        document.getElementById('sort_col_count').value = sortRowCount;
+    }
+
+    function removeSortRow(index) {
+        const row = document.getElementById(`sort_row_${index}`);
+        if (row) row.remove();
+    }
+
+    function addPair() {
+        const container = document.getElementById('pairsContainer');
+        const pairDiv = document.createElement('div');
+        pairDiv.className = 'pair-container';
+        pairDiv.id = `pair_${pairCount}`;
+
+        const header = document.createElement('div');
+        header.className = 'pair-header';
+        header.innerHTML = `
+            <strong>Matching Pair ${pairCount + 1}</strong>
+            <button type="button" onclick="removePair(${pairCount})">Remove</button>
+        `;
+
+        const nanColsDiv = document.createElement('div');
+        const nanLabel = document.createElement('p');
+        nanLabel.className = 'description';
+        nanLabel.textContent = 'NaN columns (wildcards) - columns where NaN values are allowed to match anything:';
+        const nanCheckboxList = createMultiColumnSelect(`nan_cols_${pairCount}`, pairCount);
+        nanColsDiv.appendChild(nanLabel);
+        nanColsDiv.appendChild(nanCheckboxList);
+
+        const matchingColsDiv = document.createElement('div');
+        const matchingLabel = document.createElement('p');
+        matchingLabel.className = 'description';
+        matchingLabel.textContent = 'Matching columns - columns that must have identical values:';
+        const matchingCheckboxList = createMultiColumnSelect(`matching_cols_${pairCount}`, pairCount);
+        matchingColsDiv.appendChild(matchingLabel);
+        matchingColsDiv.appendChild(matchingCheckboxList);
+
+        pairDiv.appendChild(header);
+        pairDiv.appendChild(nanColsDiv);
+        pairDiv.appendChild(matchingColsDiv);
+        container.appendChild(pairDiv);
+
+        pairCount++;
+        document.getElementById('pair_count').value = pairCount;
+    }
+
+    function removePair(index) {
+        const pair = document.getElementById(`pair_${index}`);
+        if (pair) pair.remove();
+    }
+
+    function toggleNanSubset() {
+        const checkbox = document.getElementById('most_complete');
+        const group = document.getElementById('nan_subset_group');
+        group.style.display = checkbox.checked ? 'block' : 'none';
+    }
+
+    // Prevent form submission if no file
+    document.getElementById('mainForm').addEventListener('submit', function(e) {
+        const file = document.getElementById('file').files[0];
+        if (!file) {
+            e.preventDefault();
+            alert('Please upload a file first');
+        }
+    });
+</script>
+</body>
+</html>
