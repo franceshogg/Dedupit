@@ -8,14 +8,14 @@ Dedupit takes a CSV or TSV file and helps you remove duplicate rows in two stage
 
 ## Technologies Used
 
-Python — core language
-Flask — web framework and routing
-pandas / NumPy — the actual deduplication logic (sorting, exact-match dropping, and a vectorized fuzzy-matching/clustering algorithm)
-Jinja2 — server-rendered HTML templates
-Vanilla JavaScript — dynamic form sections (variable numbers of sort columns / matching pairs) and the save/export flow, including the File System Access API (with a plain-download fallback for browsers that don't support it)
-HTML / CSS — no frontend framework or build step
-PythonAnywhere — hosting, running under uWSGI
-GoDaddy DNS — custom domain routing for dedupit.com
+- Python — core language
+- Flask — web framework and routing
+- pandas / NumPy — the actual deduplication logic (sorting, exact-match dropping, and a vectorized fuzzy-matching/clustering algorithm)
+- Jinja2 — server-rendered HTML templates
+- Vanilla JavaScript — dynamic form sections (variable numbers of sort columns / matching pairs) and the save/export flow, including the File System Access API (with a plain-download fallback for browsers that don't support it)
+- HTML / CSS — no frontend framework or build step
+- PythonAnywhere — hosting, running under uWSGI
+- GoDaddy DNS — custom domain routing for dedupit.com
 
 ## Features
 
