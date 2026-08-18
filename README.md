@@ -38,13 +38,13 @@ Cross-process-safe state: recovers in-progress work even if the app restarts or 
 Visit www.dedupit.com to use the deduplicator. Alternately, if you want to run the application locally, follow the steps below: 
 
 1. Installing:
-     Terminal commands: 
-        git clone <your-repo-url>
-        cd Dedupit
-        pip install -r requirements.txt
+- Terminal commands:
+  - git clone <your-repo-url>
+  - cd Dedupit
+  - pip install -r requirements.txt
 3. Running: 
-    start the application by using command "python app.py"
-    open http://127.0.0.1:5000/ in your browser.
+- start the application by using command "python app.py"
+- open http://127.0.0.1:5000/ in your browser.
 
 ## Usage
 1. Upload a CSV or TSV file on the home page.
