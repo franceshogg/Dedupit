@@ -42,7 +42,7 @@ Visit www.dedupit.com to use the deduplicator. Alternately, if you want to run t
   - git clone <your-repo-url>
   - cd Dedupit
   - pip install -r requirements.txt
-3. Running: 
+2. Running: 
 - start the application by using command "python app.py"
 - open http://127.0.0.1:5000/ in your browser.
 
