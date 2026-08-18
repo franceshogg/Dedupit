@@ -29,7 +29,7 @@ A safety cap on pathologically large fuzzy-match groups (e.g. a column where tho
 Save the cleaned file at any point, or at the end — the browser (not the server) decides where it's saved, using a native "choose a folder" dialog in supporting browsers
 Cross-process-safe state: recovers in-progress work even if the app restarts or a request happens to land on a different backend worker
 
-#To-do List
+To-do List
 - Create a more aesthetically pleasing UI
 - Add option to consider strings that are similar (for example, "Jessica" and "Jesisca") as matching 
 
